@@ -1,20 +1,15 @@
-from transformers import pipeline, AutoImageProcessor, DefaultDataCollator, create_optimizer, TFAutoModelForImageClassification, trainer
+from transformers import pipeline, AutoImageProcessor, DefaultDataCollator, create_optimizer, TFAutoModelForImageClassification, ConvNextV2Model, BeitForImageClassification
 from datasets import load_dataset
 import evaluate
 import numpy as np
 import tensorflow as tf
 from PIL import Image
 
-import os
+
 from tensorflow import keras
 from tensorflow.python.keras import layers
 from tensorflow.python.keras.losses import SparseCategoricalCrossentropy
 from transformers.keras_callbacks import KerasMetricCallback, PushToHubCallback
-
-#dataset_path = 'dataset/bill_dataset/'
-
-#dataset = load_dataset('imagefolder', data_dir=dataset_path, split= 'train')
-#dataset.push_to_hub('Franman/billetes-argentinos', token=os.environ['HF_WRITE_TOKEN'])
 
 dataset = load_dataset('Franman/billetes-argentinos', split= 'train')
 dataset = dataset.train_test_split(test_size=0.2)
@@ -25,10 +20,13 @@ for i, label in enumerate(labels):
     label2id[label] = str(i)
     id2label[str(i)] = label
 
-checkpoint = "google/vit-base-patch16-224-in21k"
+# checkpoint = "google/vit-base-patch16-224-in21k"
+#checkpoint = "facebook/convnextv2-tiny-1k-224" # https://huggingface.co/docs/transformers/model_doc/convnextv2#transformers.ConvNextV2Model
+checkpoint = "microsoft/beit-base-patch16-224"
 image_processor = AutoImageProcessor.from_pretrained(checkpoint)
 
 size = (image_processor.size["height"], image_processor.size["width"])
+# size = (image_processor.size["shortest_edge"], image_processor.size["shortest_edge"])
 
 train_data_augmentation = keras.Sequential(
     [
@@ -87,20 +85,26 @@ def compute_metrics(eval_pred):
     predictions = np.argmax(predictions, axis=1)
     return accuracy.compute(predictions=predictions, references=labels)
 
-batch_size = 100
+batch_size = 32
 num_epochs = 10
 num_train_steps = len(dataset["train"]) * num_epochs
-learning_rate = 0.01
-weight_decay_rate = 0.01
+learning_rate = 5e-4
+weight_decay_rate = 0.005
 
 optimizer, lr_schedule = create_optimizer(
     init_lr=learning_rate,
     num_train_steps=num_train_steps,
     weight_decay_rate=weight_decay_rate,
-    num_warmup_steps=0,
+    num_warmup_steps=1,
 )
 
-model = TFAutoModelForImageClassification.from_pretrained(
+# model = TFAutoModelForImageClassification.from_pretrained(
+#     checkpoint,
+#     id2label=id2label,
+#     label2id=label2id,
+# )
+
+model = BeitForImageClassification.from_pretrained(
     checkpoint,
     id2label=id2label,
     label2id=label2id,
@@ -117,7 +121,10 @@ tf_eval_dataset = dataset["test"].to_tf_dataset(
 )
 
 loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-model.compile(optimizer=optimizer, loss=loss)
+model.compile(
+    optimizer=optimizer, 
+    loss=loss
+    )
 
 metric_callback = KerasMetricCallback(metric_fn=compute_metrics, eval_dataset=tf_eval_dataset)
 
