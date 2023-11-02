@@ -3,5 +3,6 @@ import os
 
 dataset_path = 'dataset/bill_dataset/'
 
-dataset = load_dataset('imagefolder', data_dir=dataset_path, split= 'train')
+dataset = load_dataset('imagefolder', data_dir=dataset_path)
+print(dataset['train'].features)
 dataset.push_to_hub('Franman/billetes-argentinos', token=os.environ['HF_WRITE_TOKEN'])
